@@ -67,28 +67,30 @@ def clamd_scan(path: str) -> dict:
     out = (p.stdout or "").strip()
     err = (p.stderr or "").strip()
 
+    parsed = _parse_clamdscan_output(out) if out else {"detail": None, "signature": None}
+
     if p.returncode == 0:
         return {
-            "status": "clean",
-            "engine": "clamav",
+            "result": "clean",
             "engine_detail": out,
-            "scan_duration_ms": scan_duration_ms
+            "signature": None,
+            "scan_duration_ms": scan_duration_ms,
         }
 
     if p.returncode == 1:
         return {
-            "status": "infected",
-            "engine": "clamav",
+            "result": "infected",
             "engine_detail": out,
-            "scan_duration_ms": scan_duration_ms
+            "signature": parsed["signature"],
+            "scan_duration_ms": scan_duration_ms,
         }
 
     return {
-        "status": "error",
-        "engine": "clamav",
+        "result": "error",
         "engine_detail": out,
+        "signature": None,
         "stderr": err,
-        "scan_duration_ms": scan_duration_ms
+        "scan_duration_ms": scan_duration_ms,
     }
 
 @app.get("/health")
