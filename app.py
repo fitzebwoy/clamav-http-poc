@@ -51,27 +51,45 @@ def _parse_clamdscan_output(raw: str) -> Dict[str, Optional[str]]:
     return {"detail": tail, "signature": signature}
 
 
-def clamd_scan(path: str) -> Dict[str, Optional[str]]:
-    """
-    Run clamdscan (blocking). Exit codes:
-      0 = clean, 1 = infected, 2 = error
-    """
+import time
+
+def clamd_scan(path: str) -> dict:
+    scan_start = time.monotonic()
+
     p = subprocess.run(
         ["clamdscan", "--fdpass", "--no-summary", path],
         capture_output=True,
         text=True,
     )
-    raw = (p.stdout or "").strip()
-    stderr = (p.stderr or "").strip()
 
-    parsed = _parse_clamdscan_output(raw) if raw else {"detail": None, "signature": None}
+    scan_duration_ms = int((time.monotonic() - scan_start) * 1000)
+
+    out = (p.stdout or "").strip()
+    err = (p.stderr or "").strip()
 
     if p.returncode == 0:
-        return {"result": "clean", "raw": raw, "signature": None, "engine_detail": parsed["detail"]}
-    if p.returncode == 1:
-        return {"result": "infected", "raw": raw, "signature": parsed["signature"], "engine_detail": parsed["detail"]}
-    return {"result": "error", "raw": raw, "signature": None, "engine_detail": parsed["detail"], "stderr": stderr}
+        return {
+            "status": "clean",
+            "engine": "clamav",
+            "engine_detail": out,
+            "scan_duration_ms": scan_duration_ms
+        }
 
+    if p.returncode == 1:
+        return {
+            "status": "infected",
+            "engine": "clamav",
+            "engine_detail": out,
+            "scan_duration_ms": scan_duration_ms
+        }
+
+    return {
+        "status": "error",
+        "engine": "clamav",
+        "engine_detail": out,
+        "stderr": err,
+        "scan_duration_ms": scan_duration_ms
+    }
 
 @app.get("/health")
 def health():
@@ -140,7 +158,7 @@ async def scan(request: Request, file: UploadFile = File(...)):
             "signature": scan_result.get("signature"),    # e.g. Eicar-Test-Signature
             "engine": "clamav",
             "engine_detail": scan_result.get("engine_detail"),  # e.g. OK / "<sig> FOUND"
-            "duration_ms": duration_ms,
+            "scan_duration_ms": scan_result.get["scan_duration_ms"]
         }
 
         # Include stderr only on error
