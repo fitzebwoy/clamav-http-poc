@@ -158,7 +158,7 @@ async def scan(request: Request, file: UploadFile = File(...)):
             "signature": scan_result.get("signature"),    # e.g. Eicar-Test-Signature
             "engine": "clamav",
             "engine_detail": scan_result.get("engine_detail"),  # e.g. OK / "<sig> FOUND"
-            "scan_duration_ms": scan_result.get["scan_duration_ms"]
+            "scan_duration_ms": scan_result.get("scan_duration_ms")
         }
 
         # Include stderr only on error
