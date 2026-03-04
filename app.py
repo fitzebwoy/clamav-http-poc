@@ -96,7 +96,7 @@ async def scan(request: Request, file: UploadFile = File(...)):
 
     # Immediate 503 if scanner is busy
     try:
-        await asyncio.wait_for(scan_sem.acquire(), timeout=0.0)
+        await asyncio.wait_for(scan_sem.acquire(), timeout=0.1)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=503, detail="Scanner busy, retry later")
 
