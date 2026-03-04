@@ -75,14 +75,25 @@ def clamd_scan(path: str) -> Dict[str, Optional[str]]:
 
 @app.get("/health")
 def health():
-    # Fast and meaningful: is clamd reachable right now?
-    if not os.path.exists("/tmp/clamd.sock") and not _clamd_ping():
-        raise HTTPException(status_code=503, detail="clamd not ready")
+    # Liveness: API is up
     return {"ok": True}
+
+@app.get("/ready")
+def ready():
+    # Readiness: clamd is reachable
+    if not _clamd_ping():
+        raise HTTPException(status_code=503, detail="clamd not ready")
+    return {"ready": True}
+
+@app.get("/")
+def root():
+    return {"service": "clamav-http-poc", "liveness": "/health", "readiness": "/ready", "scan": "/scan"}
 
 
 @app.post("/scan")
 async def scan(request: Request, file: UploadFile = File(...)):
+    if not _clamd_ping():
+        raise HTTPException(status_code=503, detail="clamd not ready")
     # Early reject on request size, if Content-Length is present.
     # Note: multipart adds overhead, so we allow a bit of headroom.
     cl = request.headers.get("content-length")
