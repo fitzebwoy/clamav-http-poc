@@ -168,6 +168,12 @@ def ready():
     return {
         "ready": True,
         "engine": "clamav",
+        "instance_id": os.getenv("WEBSITE_INSTANCE_ID"),
+        "app_name": os.getenv("CONTAINER_APP_NAME"),
+        "revision": os.getenv("CONTAINER_APP_REVISION"),
+        "replica_name": os.getenv("CONTAINER_APP_REPLICA_NAME"),
+        "hostname": os.getenv("CONTAINER_APP_HOSTNAME"),
+        "port": os.getenv("CONTAINER_APP_PORT"),
         "definitions": _get_definition_versions(),
     }
 
