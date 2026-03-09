@@ -5,6 +5,8 @@ import socket
 import subprocess
 import asyncio
 from typing import Optional, Dict
+import re
+from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 
@@ -20,6 +22,66 @@ scan_sem = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
 # Multipart overhead varies; allow a bit of headroom for Content-Length
 CONTENT_LENGTH_HEADROOM = int(os.getenv("CONTENT_LENGTH_HEADROOM", str(1024 * 1024)))  # 1MB
 
+CLAMAV_DB_DIR = Path("/var/lib/clamav")
+
+
+def _get_definition_versions() -> dict:
+    """
+    Return the current ClamAV definition versions from files on disk.
+    This is lightweight and doesn't require shelling out.
+    """
+    versions = {
+        "daily": None,
+        "main": None,
+        "bytecode": None,
+    }
+
+    patterns = {
+        "daily": [CLAMAV_DB_DIR / "daily.cld", CLAMAV_DB_DIR / "daily.cvd"],
+        "main": [CLAMAV_DB_DIR / "main.cld", CLAMAV_DB_DIR / "main.cvd"],
+        "bytecode": [CLAMAV_DB_DIR / "bytecode.cld", CLAMAV_DB_DIR / "bytecode.cvd"],
+    }
+
+    version_regex = re.compile(r"version[: ]+(\d+)", re.IGNORECASE)
+
+    for name, paths in patterns.items():
+        for path in paths:
+            if path.exists():
+                try:
+                    # Use sigtool if available to inspect the db file
+                    p = subprocess.run(
+                        ["sigtool", "--info", str(path)],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                    )
+                    output = (p.stdout or "") + "\n" + (p.stderr or "")
+                    m = version_regex.search(output)
+                    if m:
+                        versions[name] = int(m.group(1))
+                        break
+                except Exception:
+                    pass
+
+    return versions
+
+
+def _run_freshclam() -> dict:
+    """
+    Force a definition update check now.
+    """
+    p = subprocess.run(
+        ["freshclam", "--daemon-notify"],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+    return {
+        "return_code": p.returncode,
+        "stdout": (p.stdout or "").strip(),
+        "stderr": (p.stderr or "").strip(),
+    }
 
 def _clamd_ping(host: str = "127.0.0.1", port: int = 3310, timeout_s: float = 1.0) -> bool:
     """Lightweight readiness check: connect to clamd TCP and PING."""
@@ -100,15 +162,40 @@ def health():
 
 @app.get("/ready")
 def ready():
-    # Readiness: clamd is reachable
     if not _clamd_ping():
         raise HTTPException(status_code=503, detail="clamd not ready")
-    return {"ready": True}
+
+    return {
+        "ready": True,
+        "engine": "clamav",
+        "definitions": _get_definition_versions(),
+    }
 
 @app.get("/")
 def root():
     return {"service": "clamav-http-poc", "liveness": "/health", "readiness": "/ready", "scan": "/scan"}
 
+@app.post("/update-definitions")
+async def update_definitions():
+    result = await asyncio.to_thread(_run_freshclam)
+
+    definitions = _get_definition_versions()
+
+    response = {
+        "engine": "clamav",
+        "definitions": definitions,
+        "update_result": "ok" if result["return_code"] == 0 else "error",
+        "freshclam_return_code": result["return_code"],
+        "stdout": result["stdout"],
+    }
+
+    if result["stderr"]:
+        response["stderr"] = result["stderr"]
+
+    if result["return_code"] != 0:
+        raise HTTPException(status_code=500, detail=response)
+
+    return response
 
 @app.post("/scan")
 async def scan(request: Request, file: UploadFile = File(...)):
