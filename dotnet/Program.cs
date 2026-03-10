@@ -52,6 +52,7 @@ app.MapGet("/ready", async () =>
     {
         ready = true,
         engine = "clamav",
+        api_langauge = "dotnet",
         instance_id = Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID"),
         app_name = Environment.GetEnvironmentVariable("CONTAINER_APP_NAME"),
         revision = Environment.GetEnvironmentVariable("CONTAINER_APP_REVISION"),
@@ -151,7 +152,8 @@ app.MapPost("/scan", async (HttpRequest request) =>
             ["signature"] = scanResult.Signature,
             ["engine"] = "clamav",
             ["engine_detail"] = scanResult.EngineDetail,
-            ["scan_duration_ms"] = scanResult.ScanDurationMs
+            ["scan_duration_ms"] = scanResult.ScanDurationMs,
+            ["api_langauge"] = "dotnet"
         };
 
         if (scanResult.Result == "error" && !string.IsNullOrWhiteSpace(scanResult.Stderr))
